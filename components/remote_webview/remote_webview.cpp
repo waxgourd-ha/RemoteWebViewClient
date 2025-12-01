@@ -12,6 +12,7 @@
 #include "esp_efuse.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h" // Ensure freertos/semphr.h is included
 
 namespace esphome {
 namespace remote_webview {
@@ -32,7 +33,19 @@ void RemoteWebView::setup() {
     ESP_LOGE(TAG, "no display");
     return;
   }
+  
+  // 1. [New] Handle global server component ID
+  if (this->global_server_ptr_) {
+    // Use the public method value() to retrieve the stored string, and call set_server() to parse host/port
+    this->set_server(this->global_server_ptr_->value());
+  }
 
+  // 2. [New Check] Ensure server configuration is set (either via server or server_global)
+  if (server_host_.empty() || server_port_ == 0) {
+    ESP_LOGE(TAG, "Server host or port not configured. Cannot start WebSocket task.");
+    return;
+  }
+  
   display_width_ = display_->get_width();
   display_height_ = display_->get_height();
 
@@ -49,6 +62,7 @@ void RemoteWebView::setup() {
   }
 
 #if REMOTE_WEBVIEW_HW_JPEG
+  jpeg_decoder_handle_t hw_dec_{nullptr};
   jpeg_decode_engine_cfg_t jcfg = {
     .timeout_ms = 200,
   };

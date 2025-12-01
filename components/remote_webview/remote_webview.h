@@ -11,6 +11,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+// 1. [New] Include globals component header file
+#include "esphome/components/globals/globals_component.h" // <<<--- add
 
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
   #include "driver/jpeg_decode.h"
@@ -30,11 +32,16 @@ namespace remote_webview {
 
 class RemoteWebView : public Component {
  public:
+  // 2. [New] Define type alias for the global string component (used for set_server_ptr and member variables)
+  using global_str_t = globals::RestoringGlobalStringComponent<std::string, 64>; // <<<--- add
+
   void set_display(display::Display *d) { display_ = d; }
   void set_touchscreen(touchscreen::Touchscreen *t) { touch_ = t; }
   void set_device_id(const std::string &s) { device_id_ = s; }
   void set_url(const std::string &s) { url_ = s; }
   void set_server(const std::string &s);
+  // 3. [Modify] Change set_server_ptr signature to accept a pointer to the global component
+  void set_server_ptr(global_str_t *ptr) { this->global_server_ptr_ = ptr; } // <<<--- Modify
   void set_tile_size(int v) { tile_size_ = v; }
   void set_full_frame_tile_count(int v) { full_frame_tile_count_ = v; }
   void set_full_frame_area_threshold(float v) { full_frame_area_threshold_ = v; }
@@ -89,6 +96,9 @@ class RemoteWebView : public Component {
   bool rgb565_big_endian_{true};
   int rotation_{0};
   bool touch_disabled_{false};
+
+  // 4. [New] Member variable to store the pointer to the global string component
+  global_str_t *global_server_ptr_{nullptr}; // <<<--- add
 
 #if REMOTE_WEBVIEW_HW_JPEG
   jpeg_decoder_handle_t hw_dec_{nullptr};

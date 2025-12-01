@@ -9,6 +9,7 @@ from esphome.const import CONF_ID, CONF_DISPLAY_ID, CONF_URL, CONF_ROTATION
 CONF_DEVICE_ID = "device_id"
 CONF_TOUCHSCREEN_ID = "touchscreen_id"
 CONF_SERVER = "server"
+CONF_SERVER_GLOBAL = "server_global"  # <--- add
 CONF_TILE_SIZE = "tile_size"
 CONF_FULL_FRAME_TILE_COUNT = "full_frame_tile_count"
 CONF_FULL_FRAME_AREA_THRESHOLD = "full_frame_area_threshold"
@@ -43,34 +44,70 @@ def validate_host_port(value):
 ns = cg.esphome_ns.namespace("remote_webview")
 RemoteWebView = ns.class_("RemoteWebView", cg.Component)
 
-CONFIG_SCHEMA = cv.Schema(
-    {
-        cv.GenerateID(): cv.declare_id(RemoteWebView),
-        cv.GenerateID(CONF_DISPLAY_ID): cv.use_id(display.Display),
-        cv.GenerateID(CONF_TOUCHSCREEN_ID): cv.use_id(touchscreen.Touchscreen),
-        cv.Required(CONF_SERVER): validate_host_port,
-        cv.Required(CONF_URL): cv.string,
+# Key Fix 1: Import globals component type for correct ID validation
+globals_ns = cg.esphome_ns.namespace('globals')
+GlobalsComponent = globals_ns.class_('GlobalsComponent')
 
-        cv.Optional(CONF_DEVICE_ID): cv.string,
-        cv.Optional(CONF_TILE_SIZE): cv.int_,
-        cv.Optional(CONF_FULL_FRAME_TILE_COUNT): cv.int_,
-        cv.Optional(CONF_FULL_FRAME_AREA_THRESHOLD): cv.float_,
-        cv.Optional(CONF_FULL_FRAME_EVERY): cv.int_,
-        cv.Optional(CONF_EVERY_NTH_FRAME): cv.int_,
-        cv.Optional(CONF_MIN_FRAME_INTERVAL): cv.int_,
-        cv.Optional(CONF_JPEG_QUALITY): cv.int_,
-        cv.Optional(CONF_MAX_BYTES_PER_MSG): cv.int_,
-        cv.Optional(CONF_BIG_ENDIAN): cv.boolean,
-        cv.Optional(CONF_ROTATION): validate_rotation,
-    }
-).extend(cv.COMPONENT_SCHEMA)
+# Key Fix 2: Validator: Check that CONF_SERVER and CONF_SERVER_GLOBAL are mutually exclusive and at least one is present.
+def validate_server_config(value):
+    if CONF_SERVER in value and CONF_SERVER_GLOBAL in value:
+        raise cv.Invalid(
+            "Only one of 'server' or 'server_global' can be specified.",
+            [CONF_SERVER, CONF_SERVER_GLOBAL]
+        )
+    if CONF_SERVER not in value and CONF_SERVER_GLOBAL not in value:
+        raise cv.Invalid(
+            "One of 'server' or 'server_global' is required.",
+            [CONF_SERVER, CONF_SERVER_GLOBAL]
+        )
+    return value
+
+
+CONFIG_SCHEMA = cv.All(
+    cv.Schema(
+        {
+            cv.GenerateID(): cv.declare_id(RemoteWebView),
+            cv.GenerateID(CONF_DISPLAY_ID): cv.use_id(display.Display),
+            cv.GenerateID(CONF_TOUCHSCREEN_ID): cv.use_id(touchscreen.Touchscreen),
+            
+            cv.Optional(CONF_SERVER): validate_host_port,
+            # Key Fix 3: Change ID validation target from cg.std_string to GlobalsComponent
+            cv.Optional(CONF_SERVER_GLOBAL): cv.use_id(GlobalsComponent), 
+            
+            cv.Required(CONF_URL): cv.string,
+            
+            cv.Optional(CONF_DEVICE_ID): cv.string,
+            cv.Optional(CONF_TILE_SIZE): cv.int_,
+            cv.Optional(CONF_FULL_FRAME_TILE_COUNT): cv.int_,
+            cv.Optional(CONF_FULL_FRAME_AREA_THRESHOLD): cv.float_,
+            cv.Optional(CONF_FULL_FRAME_EVERY): cv.int_,
+            cv.Optional(CONF_EVERY_NTH_FRAME): cv.int_,
+            cv.Optional(CONF_MIN_FRAME_INTERVAL): cv.int_,
+            cv.Optional(CONF_JPEG_QUALITY): cv.int_,
+            cv.Optional(CONF_MAX_BYTES_PER_MSG): cv.int_,
+            cv.Optional(CONF_BIG_ENDIAN): cv.boolean,
+            cv.Optional(CONF_ROTATION): validate_rotation,
+        }
+    ).extend(cv.COMPONENT_SCHEMA),
+    # Key Fix 4: Use a custom validator to enforce mutual exclusion and mandatory rules
+    validate_server_config 
+)
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
 
     disp = await cg.get_variable(config[CONF_DISPLAY_ID])
     cg.add(var.set_display(disp))
-    cg.add(var.set_server(config[CONF_SERVER]))
+    
+    # --- Key Fix 5: Server Configuration Logic ---
+    if CONF_SERVER in config:
+        cg.add(var.set_server(config[CONF_SERVER]))
+    elif CONF_SERVER_GLOBAL in config:
+        server_var = await cg.get_variable(config[CONF_SERVER_GLOBAL])
+        # Call set_server_ptr
+        cg.add(var.set_server_ptr(server_var))
+    # --- Server Configuration Logic End ---
+    
     cg.add(var.set_url(config[CONF_URL]))
 
     if CONF_TOUCHSCREEN_ID in config:
